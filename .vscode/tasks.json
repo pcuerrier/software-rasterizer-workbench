@@ -1,0 +1,51 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    //${input:targetChoice}
+    "version": "2.0.0",
+    "inputs": [
+        {
+            "id": "targetChoice",
+            "description": "Choose build target: ALL_BUILD for all targets, APP for DLL only",
+            "default": "ALL_BUILD",
+            "type": "pickString",
+            "options": [
+                "ALL_BUILD",
+                "APP"
+            ]
+        }
+    ],
+    "windows": {
+        "command": "${workspaceFolder}\\scripts\\build.bat",
+        "args": [],
+        "problemMatcher": "$msCompile"
+    },
+    "tasks": [
+        {
+            "type": "shell",
+            "label": "Build Debug",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always"
+            }
+        },
+        {
+            "type": "shell",
+            "label": "Build Release",
+            "args": ["Release"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always"
+            }
+        }
+    ]
+}
