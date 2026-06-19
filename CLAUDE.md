@@ -1,19 +1,39 @@
-# Software Rasterizer Workbench
+# hot-reload-app-template
 
-A C++ software rasterizer built on a hot-reloadable engine/app split. The old attempt lives in `old/` and can be referenced for code to port forward.
+A C++ application template built on a hot-reloadable platform/app/renderer split. The old attempt lives in `old/` and can be referenced for code to port forward.
 
 ## Architecture
 
-Two compilation units with a clean boundary defined in `src/platform.h`:
+### Philosophy
+
+The platform is the stable host. The app and renderer are **services** it loads — both are hot-reloadable DLLs with no knowledge of each other. All communication between them flows through types defined in `src/platform.h`, which is the only file shared across the DLL boundary.
+
+```
+Platform (main.exe)
+  ├── hot-loads app.dll      → AppUpdate(input*, RenderCommands*)
+  ├── hot-loads renderer.dll → RendererDraw(RenderCommands*, RenderBuffer*)
+  └── blits RenderBuffer to screen via SDL
+```
+
+### Layers
 
 | Layer | Source | Output | Role |
 |---|---|---|---|
-| Platform | `src/main.cpp` | `build/main.exe` | Window, SDL3, DLL loading, blit to screen |
-| App | `src/app.cpp` | `build/app.dll` | Logic + fills the offscreen pixel buffer |
+| Platform | `src/main.cpp` | `build/main.exe` | Window, SDL3, hot-loads both DLLs, blits to screen |
+| App | `src/app.cpp` | `build/app.dll` | Updates logic, fills a `RenderCommands` buffer |
+| Renderer | `src/renderer.cpp` | `build/renderer.dll` | Consumes `RenderCommands`, writes pixels to `RenderBuffer` |
 
-The app exports a single function: `AppUpdate(AppOffscreenBuffer* buffer)`. It updates logic and writes pixels — it does not call any rendering API. The platform layer blits the buffer to the screen each frame.
+### Data flow
 
-Hot-reload: the platform layer watches `app.dll`'s write time each frame. When it changes, it unloads the old DLL and loads a fresh copy (via a temp DLL so the compiler can overwrite the source).
+1. Platform calls `AppUpdate` — app reads input, updates state, writes draw commands into `RenderCommands`
+2. Platform calls `RendererDraw` — renderer reads `RenderCommands`, rasterizes into `RenderBuffer`
+3. Platform blits `RenderBuffer` to the SDL window
+
+The app never touches pixels. The renderer never touches input or game state. The platform owns the window and the memory that both services write into.
+
+### Hot-reload
+
+The platform watches each DLL's write time every frame. When a DLL changes on disk, it unloads the old one and loads a fresh copy via a temp DLL (so the compiler can overwrite the source file while the app is running). App and renderer can be recompiled and reloaded independently.
 
 ## Building
 
@@ -73,6 +93,8 @@ cmake --build lib/googletest/build --config Release
 
 ## Key Design Rules
 
-- The app layer (`app.cpp`) must not link spdlog. If logging is needed in the app, it goes through a function pointer passed via `platform.h` (see `old/shared.h` `PlatformLogFn` for the pattern).
-- `src/platform.h` is the only file shared across the DLL boundary. Keep it free of platform-specific headers.
+- `src/platform.h` is the only file shared across DLL boundaries. Keep it free of platform-specific headers.
+- The app layer never writes pixels. The renderer layer never reads input or game state. All cross-DLL communication goes through structs in `platform.h`.
+- The renderer is intentionally swappable — the first implementation is a software rasterizer, but any renderer that consumes `RenderCommands` and writes to `RenderBuffer` can replace it.
+- Neither DLL may link spdlog. Logging in DLLs goes through a function pointer passed via `platform.h` (see `old/shared.h` `PlatformLogFn` for the pattern).
 - Tests live in `tests/*.cpp` and are compiled with exceptions enabled (`-EHsc`) to satisfy GoogleTest. The main build uses `-EHsc-`.
