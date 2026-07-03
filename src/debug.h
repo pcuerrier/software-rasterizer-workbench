@@ -10,7 +10,7 @@
     #define DEBUG_BREAK() *(volatile int *)0 = 0
 #endif
 
-#if ENGINE_DEBUG
+#if DEBUG
     // do { ... } while(0) ensures safe use inside if/else without braces.
     #define ASSERT(Expression) \
         do { \

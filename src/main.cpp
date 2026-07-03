@@ -1,95 +1,67 @@
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "main.h"
 
-#pragma warning(push, 0)
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_main.h>
-#include <SDL3/SDL_loadso.h>
-#pragma warning(pop)
-
-#include "platform.h"
-
-static void AppUpdate_Stub(AppOffscreenBuffer*) {}
-
-struct AppCode
-{
-    SDL_SharedObject*     library;
-    AppUpdateFn*          Update;
-    SDL_Time              lastWriteTime;
-    bool                  isValid;
-};
-
-static SDL_Time GetFileWriteTime(const char* path)
-{
-    SDL_PathInfo info = {};
-    SDL_GetPathInfo(path, &info);
-    return info.modify_time;
-}
-
-static AppCode LoadApp(const char* sourceDLL, const char* tempDLL)
-{
-    AppCode app      = {};
-    app.Update = AppUpdate_Stub;
-
-    CopyFile(sourceDLL, tempDLL, FALSE);
-    app.library = SDL_LoadObject(tempDLL);
-    if (app.library)
-    {
-        app.Update = (AppUpdateFn*)SDL_LoadFunction(app.library, "AppUpdate");
-        app.isValid         = (app.Update != nullptr);
-    }
-    if (!app.isValid)
-        app.Update = AppUpdate_Stub;
-
-    app.lastWriteTime = GetFileWriteTime(sourceDLL);
-    return app;
-}
-
-static void UnloadApp(AppCode* app)
-{
-    if (app->library)
-        SDL_UnloadObject(app->library);
-    *app                = {};
-    app->Update = AppUpdate_Stub;
-}
+#include "logger.h"
+#include "platform/app_code.h"
+#include "platform/renderer.h"
 
 int main(int argc, char* argv[])
 {
-    (void)argc;
-    (void)argv;
+    // ---- Constants ------------------------------------------------------
+    const int TARGET_FPS              = 60;
+    constexpr float TARGET_FRAME_TIME = 1.0f / (float)TARGET_FPS;
+    const float SLEEP_THRESHOLD_MS    = 2.0f;
 
+    PlatformLogFn logFn = Logger_Init("crash_log.txt", /*truncate=*/true);
+    // ---- SDL Init -------------------------------------------------------
     if (!SDL_Init(SDL_INIT_VIDEO))
     {
-        SDL_Log("Failed to initialize SDL: %s", SDL_GetError());
+        PLATFORM_LOG_CRITICAL("Failed to initialize SDL: %s", SDL_GetError());
         return -1;
     }
 
-    SDL_Window* window = SDL_CreateWindow("Software Rasterizer Workbench", 1280, 720,
-                                          SDL_WINDOW_RESIZABLE);
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);
-    if (!window || !renderer)
-    {
-        SDL_Log("Failed to create window/renderer: %s", SDL_GetError());
-        return -1;
-    }
-
-    int   renderWidth  = 1280;
-    int   renderHeight = 720;
-    int   pitch        = renderWidth * 4;
-    void* pixels       = SDL_malloc((size_t)(pitch * renderHeight));
-
-    SDL_Texture* texture = SDL_CreateTexture(renderer,
-                                             SDL_PIXELFORMAT_ARGB8888,
-                                             SDL_TEXTUREACCESS_STREAMING,
-                                             renderWidth, renderHeight);
-
+    // ---- Game Code (Hot-Reload) -----------------------------------------
     const char* sourceDLL = "app.dll";
     const char* tempDLL   = "app_temp.dll";
-    AppCode     app       = LoadApp(sourceDLL, tempDLL);
+    AppCode     app       = LoadAppCode(sourceDLL, tempDLL);
+    app.Init();
 
+    // ---- Window & Renderer ----------------------------------------------
+    SDL_Window* window = SDL_CreateWindow("JRPG - Workbench", 1280, 720, SDL_WINDOW_RESIZABLE);
+    if (!window)
+    {
+        PLATFORM_LOG_CRITICAL("Failed to create window: %s", SDL_GetError());
+        return -1;
+    }
+
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);
+    if (!renderer)
+    {
+        PLATFORM_LOG_CRITICAL("Failed to create renderer: %s", SDL_GetError());
+        return -1;
+    }
+
+    int           renderWidth  = 0;
+    int           renderHeight = 0;
+    int           bufferPitch  = 0;
+    void*         appPixels   = nullptr;
+    SDL_Texture*  texture      = nullptr;
+    ResizeRenderBuffer(renderer, 1280, 720,
+                       &texture, &appPixels,
+                       &renderWidth, &renderHeight, &bufferPitch);
+
+    // ---- Timing ---------------------------------------------------------
+    uint64_t perfCountFreq        = SDL_GetPerformanceFrequency();
+    uint64_t lastCounter          = SDL_GetPerformanceCounter();
+    float    currentDeltaTime     = TARGET_FRAME_TIME;
+
+    // ---- Main Loop ------------------------------------------------------
     bool running = true;
     while (running)
     {
+        uint64_t currentCounter = SDL_GetPerformanceCounter();
+        currentDeltaTime = (float)(currentCounter - lastCounter) / (float)perfCountFreq;
+
+        // ---- Event Processing -------------------------------------------
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
@@ -100,60 +72,83 @@ int main(int argc, char* argv[])
                 break;
 
             case SDL_EVENT_WINDOW_RESIZED:
-                renderWidth  = event.window.data1;
-                renderHeight = event.window.data2;
-                pitch        = renderWidth * 4;
-                SDL_free(pixels);
-                pixels = SDL_malloc((size_t)(pitch * renderHeight));
-                SDL_DestroyTexture(texture);
-                texture = SDL_CreateTexture(renderer,
-                                            SDL_PIXELFORMAT_ARGB8888,
-                                            SDL_TEXTUREACCESS_STREAMING,
-                                            renderWidth, renderHeight);
+                ResizeRenderBuffer(renderer,
+                                   event.window.data1, event.window.data2,
+                                   &texture, &appPixels,
+                                   &renderWidth, &renderHeight, &bufferPitch);
                 break;
             }
         }
 
-        // Hot reload
-        SDL_Time newWriteTime = GetFileWriteTime(sourceDLL);
+        // ---- Hot-Reload -------------------------------------------------
+#ifdef DEBUG
+        SDL_Time newWriteTime = GetFileLastWriteTime(sourceDLL);
         if (newWriteTime != app.lastWriteTime)
         {
-            SDL_Delay(100);
-            UnloadApp(&app);
-            app = LoadApp(sourceDLL, tempDLL);
+            // TODO: Check if delay is needed
+            SDL_Delay(100); // Let the compiler release file locks
+            PLATFORM_LOG_INFO("Reloading Game Code!");
+            UnloadAppCode(&app);
+            app = LoadAppCode(sourceDLL, tempDLL);
         }
-
+#endif
+        // ---- Game Update ------------------------------------------------
         AppOffscreenBuffer buffer = {};
-        buffer.memory = pixels;
+        buffer.memory = appPixels;
         buffer.width  = renderWidth;
         buffer.height = renderHeight;
-        buffer.pitch  = pitch;
+        buffer.pitch  = bufferPitch;
 
         app.Update(&buffer);
 
+        // ---- Render -----------------------------------------------------
         void* texPixels = nullptr;
         int   texPitch  = 0;
         if (SDL_LockTexture(texture, NULL, &texPixels, &texPitch))
         {
-            uint8_t* src = (uint8_t*)pixels;
+            uint8_t* src = (uint8_t*)appPixels;
             uint8_t* dst = (uint8_t*)texPixels;
             for (int y = 0; y < renderHeight; ++y)
             {
                 SDL_memcpy(dst, src, (size_t)(renderWidth * 4));
-                src += pitch;
+                src += bufferPitch;
                 dst += texPitch;
             }
             SDL_UnlockTexture(texture);
         }
         SDL_RenderTexture(renderer, texture, NULL, NULL);
         SDL_RenderPresent(renderer);
+
+        // ---- Frame Timing -----------------------------------------------
+        // Measure from currentCounter (this frame's start), not lastCounter (previous frame's start).
+        // Using lastCounter here would cause the spinlock to exit immediately every other frame
+        // because the previous frame's work already consumed the full target duration.
+        float workSeconds = (float)(SDL_GetPerformanceCounter() - currentCounter) / (float)perfCountFreq;
+        float sleepMs     = (TARGET_FRAME_TIME - workSeconds) * 1000.0f;
+        if (sleepMs > SLEEP_THRESHOLD_MS)
+        {
+            SDL_Delay((uint32_t)(sleepMs - SLEEP_THRESHOLD_MS));
+        }
+        // Spinlock to nail the exact frame boundary
+        float secondsElapsed = workSeconds;
+        while (secondsElapsed < TARGET_FRAME_TIME)
+        {
+            secondsElapsed = (float)(SDL_GetPerformanceCounter() - currentCounter) / (float)perfCountFreq;
+        }
+
+        PLATFORM_LOG_TRACE("Frame Time: %.2f ms | FPS: %.2f", secondsElapsed * 1000.0f, 1.0f / secondsElapsed);
+        lastCounter = currentCounter;
     }
 
-    UnloadApp(&app);
-    SDL_free(pixels);
+    UnloadAppCode(&app);
+    SDL_free(appPixels);
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
     return 0;
 }
+
+#include "logger.cpp"
+#include "platform/app_code.cpp"
+#include "platform/renderer.cpp"

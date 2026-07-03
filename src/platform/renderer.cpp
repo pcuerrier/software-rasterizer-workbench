@@ -1,4 +1,4 @@
-#include "platform_renderer.h"
+#include "renderer.h"
 
 void ResizeRenderBuffer(
     SDL_Renderer*  renderer,
