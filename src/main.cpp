@@ -140,6 +140,8 @@ int main(int argc, char* argv[])
         lastCounter = currentCounter;
     }
 
+    // TODO: None of this cleanup is actually necessary since the OS will reclaim all resources on process exit
+    // Check if we have large cleanup time and if so, consider removing this code to speed up shutdown.
     UnloadAppCode(&app);
     SDL_free(appPixels);
     SDL_DestroyTexture(texture);
