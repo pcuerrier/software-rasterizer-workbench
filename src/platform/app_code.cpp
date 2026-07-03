@@ -42,6 +42,7 @@ void UnloadAppCode(AppCode* code)
 {
     if (code->appLibrary)
     {
+        PLATFORM_LOG_INFO("Unloading game code.");
         SDL_UnloadObject(code->appLibrary);
         code->appLibrary = nullptr;
     }
@@ -60,6 +61,7 @@ AppCode LoadAppCode(const char* sourceDLL, const char* tempDLL)
         result.appLibrary = SDL_LoadObject(tempDLL);
         if (result.appLibrary)
         {
+            PLATFORM_LOG_INFO("Loaded game code from %s.", tempDLL);
             result.Init = (AppInitFn*)SDL_LoadFunction(result.appLibrary, "AppInit");
             result.Update = (AppUpdateFn*)SDL_LoadFunction(result.appLibrary, "AppUpdate");
             result.isValid = (result.Init != nullptr) && (result.Update != nullptr);

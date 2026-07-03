@@ -23,7 +23,7 @@ int main(int argc, char* argv[])
     const char* sourceDLL = "app.dll";
     const char* tempDLL   = "app_temp.dll";
     AppCode     app       = LoadAppCode(sourceDLL, tempDLL);
-    app.Init();
+    app.Init(logFn);
 
     // ---- Window & Renderer ----------------------------------------------
     SDL_Window* window = SDL_CreateWindow("JRPG - Workbench", 1280, 720, SDL_WINDOW_RESIZABLE);
@@ -87,7 +87,6 @@ int main(int argc, char* argv[])
         {
             // TODO: Check if delay is needed
             SDL_Delay(100); // Let the compiler release file locks
-            PLATFORM_LOG_INFO("Reloading Game Code!");
             UnloadAppCode(&app);
             app = LoadAppCode(sourceDLL, tempDLL);
         }
@@ -99,7 +98,7 @@ int main(int argc, char* argv[])
         buffer.height = renderHeight;
         buffer.pitch  = bufferPitch;
 
-        app.Update(&buffer);
+        app.Update(logFn, &buffer);
 
         // ---- Render -----------------------------------------------------
         Render(renderer, texture, buffer);

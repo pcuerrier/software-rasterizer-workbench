@@ -9,9 +9,9 @@ del app_*.pdb > NUL 2>&1
 
 echo --- Building Application DLL (%CONFIG%) ---
 if "%CONFIG%"=="Release" (
-    cl %CommonCompilerFlags% -MT ..\src\app.cpp -Fmapp.map -LD /link -incremental:no -opt:ref -EXPORT:AppUpdate
+    cl %CommonCompilerFlags% -MT ..\src\app.cpp -Fmapp.map -LD /link -incremental:no -opt:ref -EXPORT:AppInit -EXPORT:AppUpdate
 ) else (
-    cl %CommonCompilerFlags% -MTd ..\src\app.cpp -Fmapp.map -LD /link -incremental:no -opt:ref -PDB:app_%RANDOM%.pdb -EXPORT:AppUpdate
+    cl %CommonCompilerFlags% -MTd ..\src\app.cpp -Fmapp.map -LD /link -incremental:no -opt:ref -PDB:app_%RANDOM%.pdb -EXPORT:AppInit -EXPORT:AppUpdate
 )
 
 popd

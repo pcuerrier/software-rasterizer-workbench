@@ -13,13 +13,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
-
-// ---------------------------------------------------------------------------------------------------------------------
-//  Hot Reload — The OS layer owns the DLL handle and function pointers.
-//
-//  The OS checks the source DLL's write-time each
-//  frame and rebuilds this struct whenever a new compile drops.
-// ---------------------------------------------------------------------------------------------------------------------
+#include <stdio.h>
 
 struct AppOffscreenBuffer
 {
@@ -28,15 +22,6 @@ struct AppOffscreenBuffer
     int32_t height;
     int32_t pitch; // bytes per row
 };
-
-// Function pointer signature for the one-time game initialization (called before the main loop)
-#define APP_INIT(name) void name()
-typedef APP_INIT(AppInitFn);
-
-// Function pointer signature for the main game loop
-#define APP_UPDATE(name) \
-    void name(AppOffscreenBuffer* buffer)
-typedef APP_UPDATE(AppUpdateFn);
 
 // ---------------------------------------------------------------------------------------------------------------------
 //  Logging — OS owns spdlog; DLL communicates through a function pointer.
@@ -67,18 +52,34 @@ typedef void (*PlatformLogFn)(int level, const char* file, int line, const char*
 //  The DLL calls these; they format into a stack buffer then
 //  invoke the OS function pointer — zero spdlog dependency in game code.
 // ---------------------------------------------------------------------------------------------------------------------
-#define LOG_GAME(memory, lvl, fmt, ...)                         \
+#define LOG_GAME(logFn, lvl, fmt, ...)                         \
     do {                                                         \
         char _log_buf[512];                                      \
         snprintf(_log_buf, sizeof(_log_buf), fmt, ##__VA_ARGS__);\
-        if ((memory)->Log) {                                     \
-            (memory)->Log((lvl), __FILE__, __LINE__, _log_buf);  \
+        if (logFn) {                                     \
+            logFn((lvl), __FILE__, __LINE__, _log_buf);  \
         }                                                        \
     } while(0)
 
-#define LOG_TRACE(memory, fmt, ...)    LOG_GAME(memory, PLATFORM_LOG_TRACE,    fmt, ##__VA_ARGS__)
-#define LOG_DEBUG(memory, fmt, ...)    LOG_GAME(memory, PLATFORM_LOG_DEBUG,    fmt, ##__VA_ARGS__)
-#define LOG_INFO(memory, fmt, ...)     LOG_GAME(memory, PLATFORM_LOG_INFO,     fmt, ##__VA_ARGS__)
-#define LOG_WARN(memory, fmt, ...)     LOG_GAME(memory, PLATFORM_LOG_WARN,     fmt, ##__VA_ARGS__)
-#define LOG_ERROR(memory, fmt, ...)    LOG_GAME(memory, PLATFORM_LOG_ERROR,    fmt, ##__VA_ARGS__)
-#define LOG_CRITICAL(memory, fmt, ...) LOG_GAME(memory, PLATFORM_LOG_CRITICAL, fmt, ##__VA_ARGS__)
+#define LOG_TRACE(logFn, fmt, ...)    LOG_GAME(logFn, PLATFORM_LOG_TRACE,    fmt, ##__VA_ARGS__)
+#define LOG_DEBUG(logFn, fmt, ...)    LOG_GAME(logFn, PLATFORM_LOG_DEBUG,    fmt, ##__VA_ARGS__)
+#define LOG_INFO(logFn, fmt, ...)     LOG_GAME(logFn, PLATFORM_LOG_INFO,     fmt, ##__VA_ARGS__)
+#define LOG_WARN(logFn, fmt, ...)     LOG_GAME(logFn, PLATFORM_LOG_WARN,     fmt, ##__VA_ARGS__)
+#define LOG_ERROR(logFn, fmt, ...)    LOG_GAME(logFn, PLATFORM_LOG_ERROR,    fmt, ##__VA_ARGS__)
+#define LOG_CRITICAL(logFn, fmt, ...) LOG_GAME(logFn, PLATFORM_LOG_CRITICAL, fmt, ##__VA_ARGS__)
+
+// ---------------------------------------------------------------------------------------------------------------------
+//  Hot Reload — The OS layer owns the DLL handle and function pointers.
+//
+//  The OS checks the source DLL's write-time each
+//  frame and rebuilds this struct whenever a new compile drops.
+// ---------------------------------------------------------------------------------------------------------------------
+
+// Function pointer signature for the one-time game initialization (called before the main loop)
+#define APP_INIT(name) void name(PlatformLogFn logFn)
+typedef APP_INIT(AppInitFn);
+
+// Function pointer signature for the main game loop
+#define APP_UPDATE(name) \
+    void name(PlatformLogFn logFn, AppOffscreenBuffer* buffer)
+typedef APP_UPDATE(AppUpdateFn);
