@@ -32,6 +32,57 @@ struct AppMemory
     bool isInitialized;
 };
 
+struct ControllerButtonState
+{
+    int transitionCount; // How many times the button changed state this frame
+    bool endedDown;      // Is the button currently held down at the end of the frame?
+};
+
+struct ControllerInput
+{
+    union
+    {
+        ControllerButtonState buttons[9];
+        struct
+        {
+            // Indices 0-3: directional movement (order must match buttons[])
+            ControllerButtonState moveUp;
+            ControllerButtonState moveDown;
+            ControllerButtonState moveLeft;
+            ControllerButtonState moveRight;
+            // Indices 4-8: action buttons
+            ControllerButtonState confirm;
+            ControllerButtonState cancel;
+            ControllerButtonState attack;
+            ControllerButtonState openInventory;
+            ControllerButtonState openMenu;
+        };
+    };
+};
+
+// Guard: named fields must cover exactly the same storage as buttons[].
+static_assert(
+    sizeof(ControllerInput) == 9 * sizeof(ControllerButtonState),
+    "ControllerInput union size mismatch: buttons[] count does not match named fields"
+);
+
+struct MouseInput
+{
+    float x;           // Cursor X in framebuffer pixels (0 = left edge)
+    float y;           // Cursor Y in framebuffer pixels (0 = top edge)
+    float wheelDelta;  // Scroll wheel movement this frame (+ = up, - = down)
+    ControllerButtonState left;
+    ControllerButtonState right;
+    ControllerButtonState middle;
+};
+
+// 3. The unified Input struct passed to the DLL
+struct UserInput
+{
+    ControllerInput controllers[1];
+    MouseInput      mouse;
+};
+
 // ---------------------------------------------------------------------------------------------------------------------
 //  Logging — OS owns spdlog; DLL communicates through a function pointer.
 //
@@ -90,5 +141,5 @@ typedef APP_INIT(AppInitFn);
 
 // Function pointer signature for the main game loop
 #define APP_UPDATE(name) \
-    void name(PlatformLogFn logFn, AppMemory& memory, AppOffscreenBuffer& backbuffer)
+    void name(PlatformLogFn logFn, AppMemory& memory, AppOffscreenBuffer& backbuffer, UserInput& userInput)
 typedef APP_UPDATE(AppUpdateFn);

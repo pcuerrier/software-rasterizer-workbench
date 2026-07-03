@@ -2,6 +2,7 @@
 
 #include "logger.h"
 #include "platform/app_code.h"
+#include "platform/platform_input.h"
 #include "platform/renderer.h"
 
 int main(int argc, char* argv[])
@@ -75,10 +76,30 @@ int main(int argc, char* argv[])
 
     // ---- Main Loop ------------------------------------------------------
     bool running = true;
+    UserInput oldUserInput = {};
+
     while (running)
     {
         uint64_t currentCounter = SDL_GetPerformanceCounter();
         currentDeltaTime = (float)(currentCounter - lastCounter) / (float)perfCountFreq;
+
+        UserInput userInput    = {};
+        // Carry over held button states from last frame
+        constexpr int kButtonCount = sizeof(userInput.controllers[0].buttons) /
+                                     sizeof(userInput.controllers[0].buttons[0]);
+        for (int i = 0; i < kButtonCount; ++i)
+        {
+            userInput.controllers[0].buttons[i].endedDown =
+                oldUserInput.controllers[0].buttons[i].endedDown;
+            userInput.controllers[0].buttons[i].transitionCount = 0;
+        }
+
+        // Carry over mouse position and held button states from last frame
+        userInput.mouse                        = oldUserInput.mouse;
+        userInput.mouse.wheelDelta             = 0.0f; // reset per-frame delta
+        userInput.mouse.left.transitionCount   = 0;
+        userInput.mouse.right.transitionCount  = 0;
+        userInput.mouse.middle.transitionCount = 0;
 
         // ---- Event Processing -------------------------------------------
         SDL_Event event;
@@ -86,16 +107,84 @@ int main(int argc, char* argv[])
         {
             switch (event.type)
             {
-            case SDL_EVENT_QUIT:
-                running = false;
-                break;
+                case SDL_EVENT_QUIT:
+                {
+                    running = false;
+                } break;
 
-            case SDL_EVENT_WINDOW_RESIZED:
-                ResizeRenderBuffer(renderer,
-                                   event.window.data1, event.window.data2,
-                                   &texture, &appPixels,
-                                   &renderWidth, &renderHeight, &bufferPitch);
-                break;
+                case SDL_EVENT_WINDOW_RESIZED:
+                {
+                    ResizeRenderBuffer(renderer,
+                        event.window.data1, event.window.data2,
+                        &texture, &appPixels,
+                        &renderWidth, &renderHeight, &bufferPitch);
+                } break;
+                
+                case SDL_EVENT_KEY_DOWN:
+                case SDL_EVENT_KEY_UP:
+                {
+                    if (event.key.repeat) { break; }
+                    bool       isDown = (event.type == SDL_EVENT_KEY_DOWN);
+                    SDL_Keycode key   = event.key.key;
+
+                    ControllerInput* ctrl = &userInput.controllers[0];
+                    if      (key == SDLK_W || key == SDLK_UP)    ProcessButtonMessage(&ctrl->moveUp,        isDown);
+                    else if (key == SDLK_A || key == SDLK_LEFT)  ProcessButtonMessage(&ctrl->moveLeft,      isDown);
+                    else if (key == SDLK_S || key == SDLK_DOWN)  ProcessButtonMessage(&ctrl->moveDown,      isDown);
+                    else if (key == SDLK_D || key == SDLK_RIGHT) ProcessButtonMessage(&ctrl->moveRight,     isDown);
+                    else if (key == SDLK_RETURN)                 ProcessButtonMessage(&ctrl->confirm,       isDown);
+                    else if (key == SDLK_ESCAPE)                 ProcessButtonMessage(&ctrl->cancel,        isDown);
+                    else if (key == SDLK_Z || key == SDLK_X)     ProcessButtonMessage(&ctrl->attack,        isDown);
+                    else if (key == SDLK_I)                      ProcessButtonMessage(&ctrl->openInventory, isDown);
+                    else if (key == SDLK_TAB)                    ProcessButtonMessage(&ctrl->openMenu,      isDown);
+                } break;
+
+                case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+                case SDL_EVENT_GAMEPAD_BUTTON_UP:
+                {
+                    bool isDown = (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
+                    ControllerInput* gctrl = &userInput.controllers[0];
+                    switch (event.gbutton.button)
+                    {
+                        case SDL_GAMEPAD_BUTTON_DPAD_UP:       ProcessButtonMessage(&gctrl->moveUp,        isDown); break;
+                        case SDL_GAMEPAD_BUTTON_DPAD_DOWN:     ProcessButtonMessage(&gctrl->moveDown,      isDown); break;
+                        case SDL_GAMEPAD_BUTTON_DPAD_LEFT:     ProcessButtonMessage(&gctrl->moveLeft,      isDown); break;
+                        case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:    ProcessButtonMessage(&gctrl->moveRight,     isDown); break;
+                        case SDL_GAMEPAD_BUTTON_SOUTH:         ProcessButtonMessage(&gctrl->confirm,       isDown); break;
+                        case SDL_GAMEPAD_BUTTON_EAST:          ProcessButtonMessage(&gctrl->cancel,        isDown); break;
+                        case SDL_GAMEPAD_BUTTON_WEST:          ProcessButtonMessage(&gctrl->attack,        isDown); break;
+                        case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: ProcessButtonMessage(&gctrl->openInventory, isDown); break;
+                        case SDL_GAMEPAD_BUTTON_START:         ProcessButtonMessage(&gctrl->openMenu,      isDown); break;
+                    }
+                } break;
+
+                case SDL_EVENT_MOUSE_MOTION:
+                {
+                    userInput.mouse.x = event.motion.x;
+                    userInput.mouse.y = event.motion.y;
+                } break;
+
+                case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                case SDL_EVENT_MOUSE_BUTTON_UP:
+                {
+                    bool isDown = (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+                    switch (event.button.button)
+                    {
+                    case SDL_BUTTON_LEFT:   ProcessButtonMessage(&userInput.mouse.left,   isDown); break;
+                    case SDL_BUTTON_RIGHT:  ProcessButtonMessage(&userInput.mouse.right,  isDown); break;
+                    case SDL_BUTTON_MIDDLE: ProcessButtonMessage(&userInput.mouse.middle, isDown); break;
+                    }
+                } break;
+
+                case SDL_EVENT_MOUSE_WHEEL:
+                {
+                    userInput.mouse.wheelDelta += event.wheel.y;
+                } break;
+
+                case SDL_EVENT_GAMEPAD_ADDED:
+                {
+                    SDL_OpenGamepad(event.gdevice.which);
+                } break;
             }
         }
 
@@ -117,7 +206,10 @@ int main(int argc, char* argv[])
         backbuffer.height = renderHeight;
         backbuffer.pitch  = bufferPitch;
 
-        app.Update(logFn, appMemory, backbuffer);
+        app.Update(logFn, appMemory, backbuffer, userInput);
+
+        // Carry over the input state for the next frame
+        oldUserInput = userInput;
 
         // ---- Render -----------------------------------------------------
         Render(renderer, texture, backbuffer);
@@ -156,4 +248,5 @@ int main(int argc, char* argv[])
 
 #include "logger.cpp"
 #include "platform/app_code.cpp"
+#include "platform/platform_input.cpp"
 #include "platform/renderer.cpp"
