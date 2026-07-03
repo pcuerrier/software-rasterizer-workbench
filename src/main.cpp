@@ -72,7 +72,7 @@ int main(int argc, char* argv[])
     int           bufferPitch  = 0;
     void*         appPixels   = nullptr;
     SDL_Texture*  texture      = nullptr;
-    ResizeRenderBuffer(renderer, 1280, 720,
+    ResizeRenderBuffer(renderer, 320, 180,
                        &texture, &appPixels,
                        &renderWidth, &renderHeight, &bufferPitch);
 
@@ -84,6 +84,8 @@ int main(int argc, char* argv[])
     // ---- Main Loop ------------------------------------------------------
     bool running = true;
     UserInput oldUserInput = {};
+    int window_width, window_height;
+    SDL_GetWindowSize(window, &window_width, &window_height);
 
     while (running)
     {
@@ -119,10 +121,8 @@ int main(int argc, char* argv[])
 
                 case SDL_EVENT_WINDOW_RESIZED:
                 {
-                    ResizeRenderBuffer(renderer,
-                        event.window.data1, event.window.data2,
-                        &texture, &appPixels,
-                        &renderWidth, &renderHeight, &bufferPitch);
+                    window_width  = event.window.data1;
+                    window_height = event.window.data2;
                 } break;
                 
                 case SDL_EVENT_KEY_DOWN:
@@ -218,7 +218,7 @@ int main(int argc, char* argv[])
 
         // ---- Render -----------------------------------------------------
         FlushRenderCommands(&renderCmds, appPixels, renderWidth, renderHeight, bufferPitch);
-        Render(renderer, texture, appPixels, renderWidth, renderHeight, bufferPitch);
+        Render(renderer, texture, appPixels, renderWidth, renderHeight, bufferPitch, window_width, window_height);
 
         // ---- Frame Timing -----------------------------------------------
         // Measure from currentCounter (this frame's start), not lastCounter (previous frame's start).

@@ -31,5 +31,7 @@ void Render(
     void*         pixelBuffer,
     int           width,
     int           height,
-    int           pitch
+    int           pitch,
+    int           windowWidth,
+    int           windowHeight
 );
