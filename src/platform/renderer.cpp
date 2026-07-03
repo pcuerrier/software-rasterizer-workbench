@@ -1,5 +1,61 @@
 #include "renderer.h"
 
+static void DrawRectangle(void* memory, int w, int h, int pitch,
+                          float startX, float startY, int rectWidth, int rectHeight,
+                          uint32_t colorARGB)
+{
+    int minX = (int)startX;
+    int minY = (int)startY;
+    int maxX = minX + rectWidth;
+    int maxY = minY + rectHeight;
+
+    if (minX < 0) minX = 0;
+    if (minY < 0) minY = 0;
+    if (maxX > w) maxX = w;
+    if (maxY > h) maxY = h;
+
+    uint8_t* row = (uint8_t*)memory + (minX * 4) + (minY * pitch);
+    for (int y = minY; y < maxY; ++y)
+    {
+        uint32_t* pixel = (uint32_t*)row;
+        for (int x = minX; x < maxX; ++x)
+            *pixel++ = colorARGB;
+        row += pitch;
+    }
+}
+
+void FlushRenderCommands(RenderCommandBuffer* cmds, void* pixelBuffer, int w, int h, int pitch)
+{
+    uint8_t* at  = (uint8_t*)cmds->storage->base;
+    uint8_t* end = at + cmds->storage->used;
+
+    while (at < end)
+    {
+        RenderCommandType type = *(RenderCommandType*)at;
+        switch (type)
+        {
+        case RENDER_CMD_CLEAR:
+        {
+            RenderCmdClear* cmd = (RenderCmdClear*)at;
+            DrawRectangle(pixelBuffer, w, h, pitch, 0.0f, 0.0f, w, h, cmd->colorARGB);
+            at += sizeof(RenderCmdClear);
+            break;
+        }
+        case RENDER_CMD_RECT:
+        {
+            RenderCmdRect* cmd = (RenderCmdRect*)at;
+            DrawRectangle(pixelBuffer, w, h, pitch,
+                          (float)cmd->x, (float)cmd->y, cmd->w, cmd->h, cmd->colorARGB);
+            at += sizeof(RenderCmdRect);
+            break;
+        }
+        default:
+            at = end;
+            break;
+        }
+    }
+}
+
 void ResizeRenderBuffer(
     SDL_Renderer*  renderer,
     int            newWidth,
@@ -38,20 +94,23 @@ void ResizeRenderBuffer(
 }
 
 void Render(
-    SDL_Renderer*             renderer,
-    SDL_Texture*              texture,
-    const AppOffscreenBuffer& buffer)
+    SDL_Renderer* renderer,
+    SDL_Texture*  texture,
+    void*         pixelBuffer,
+    int           width,
+    int           height,
+    int           pitch)
 {
     void* texPixels = nullptr;
     int   texPitch  = 0;
     if (SDL_LockTexture(texture, NULL, &texPixels, &texPitch))
     {
-        uint8_t* src = (uint8_t*)buffer.memory;
+        uint8_t* src = (uint8_t*)pixelBuffer;
         uint8_t* dst = (uint8_t*)texPixels;
-        for (int y = 0; y < buffer.height; ++y)
+        for (int y = 0; y < height; ++y)
         {
-            SDL_memcpy(dst, src, (size_t)(buffer.width * 4));
-            src += buffer.pitch;
+            SDL_memcpy(dst, src, (size_t)(width * 4));
+            src += pitch;
             dst += texPitch;
         }
         SDL_UnlockTexture(texture);

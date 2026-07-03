@@ -16,21 +16,26 @@
 #include <stddef.h>
 #include <stdio.h>
 
-struct AppOffscreenBuffer
+/*struct AppOffscreenBuffer
 {
     void*   memory;
     int32_t width;
     int32_t height;
     int32_t pitch; // bytes per row
-};
+};*/
 
 // The memory block passed to the application every frame
 struct AppMemory
 {
-    MemoryArena permanentStorage; // Survives hot-reloads (Player stats, world data)
-    MemoryArena transientStorage; // Cleared every frame (Frame-specific calculations)
+    MemoryArena permanentStorage;      // Survives hot-reloads (Player stats, world data)
+    MemoryArena transientStorage;      // Cleared every frame (Frame-specific calculations)
+    MemoryArena renderCommandStorage;  // Render commands — platform resets used=0 before each frame
     bool isInitialized;
 };
+
+// ---------------------------------------------------------------------------------------------------------------------
+//  User Input — The OS owns the input state and passes it to the DLL each frame.
+// ---------------------------------------------------------------------------------------------------------------------
 
 struct ControllerButtonState
 {
@@ -76,12 +81,62 @@ struct MouseInput
     ControllerButtonState middle;
 };
 
-// 3. The unified Input struct passed to the DLL
+// The unified Input struct passed to the DLL
 struct UserInput
 {
     ControllerInput controllers[1];
     MouseInput      mouse;
 };
+
+// ---------------------------------------------------------------------------------------------------------------------
+//  Render Commands — The OS owns the render buffer and executes commands from the DLL.
+// ---------------------------------------------------------------------------------------------------------------------
+
+enum RenderCommandType : uint32_t
+{
+    RENDER_CMD_CLEAR,
+    RENDER_CMD_RECT,
+};
+
+struct RenderCmdClear
+{
+    RenderCommandType type;
+    uint32_t          colorARGB;
+};
+
+struct RenderCmdRect
+{
+    RenderCommandType type;
+    int32_t           x, y, w, h;
+    uint32_t          colorARGB;
+};
+
+struct RenderCommandBuffer
+{
+    MemoryArena* storage;
+    int32_t      width;
+    int32_t      height;
+};
+
+static inline void PushRenderCmdClear(RenderCommandBuffer* cmds, uint32_t colorARGB)
+{
+    RenderCmdClear* cmd = (RenderCmdClear*)PushSize(cmds->storage, sizeof(RenderCmdClear));
+    cmd->type      = RENDER_CMD_CLEAR;
+    cmd->colorARGB = colorARGB;
+}
+
+static inline void PushRenderCmdRect(RenderCommandBuffer* cmds,
+                                     int32_t x, int32_t y, int32_t w, int32_t h,
+                                     uint32_t colorARGB)
+{
+    RenderCmdRect* cmd = (RenderCmdRect*)PushSize(cmds->storage, sizeof(RenderCmdRect));
+    cmd->type      = RENDER_CMD_RECT;
+    cmd->x         = x;
+    cmd->y         = y;
+    cmd->w         = w;
+    cmd->h         = h;
+    cmd->colorARGB = colorARGB;
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 //  Logging — OS owns spdlog; DLL communicates through a function pointer.
@@ -141,5 +196,5 @@ typedef APP_INIT(AppInitFn);
 
 // Function pointer signature for the main game loop
 #define APP_UPDATE(name) \
-    void name(PlatformLogFn logFn, AppMemory& memory, AppOffscreenBuffer& backbuffer, UserInput& userInput)
+    void name(PlatformLogFn logFn, AppMemory& memory, UserInput& userInput, RenderCommandBuffer* render_cmds)
 typedef APP_UPDATE(AppUpdateFn);

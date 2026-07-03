@@ -15,4 +15,6 @@ extern "C" __declspec(dllexport) APP_UPDATE(AppUpdate)
     {
         LOG_INFO(logFn, "Controller 0: Move Up button pressed.");
     }
+    PushRenderCmdClear(render_cmds, 0xFF115588); // Clear to a greenish color
+    PushRenderCmdRect(render_cmds, 100, 100, 200, 150, 0xFFAA3300); // Draw a red rectangle
 }

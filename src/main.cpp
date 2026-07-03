@@ -26,7 +26,8 @@ int main(int argc, char* argv[])
     // ---- Memory ---------------------------------------------------------
     size_t permanentStorageSize = Megabytes(64);
     size_t transientStorageSize = Gigabytes(1);
-    void*  appMemoryBlock      = SDL_calloc(1, permanentStorageSize + transientStorageSize);
+    size_t renderCmdStorageSize  = Megabytes(4);
+    void*  appMemoryBlock      = SDL_calloc(1, permanentStorageSize + transientStorageSize + renderCmdStorageSize);
     if (!appMemoryBlock)
     {
         PLATFORM_LOG_CRITICAL("Failed to allocate application memory!");
@@ -38,6 +39,9 @@ int main(int argc, char* argv[])
     InitializeArena(&appMemory.transientStorage,
                     (uint8_t*)appMemoryBlock + permanentStorageSize,
                     transientStorageSize);
+    InitializeArena(&appMemory.renderCommandStorage,
+                    (uint8_t*)appMemoryBlock + permanentStorageSize + transientStorageSize,
+                    renderCmdStorageSize);
 
     // ---- Game Code (Hot-Reload) -----------------------------------------
     const char* sourceDLL = "app.dll";
@@ -201,19 +205,20 @@ int main(int argc, char* argv[])
         }
 #endif
         // ---- Game Update ------------------------------------------------
-        AppOffscreenBuffer backbuffer = {};
-        backbuffer.memory = appPixels;
-        backbuffer.width  = renderWidth;
-        backbuffer.height = renderHeight;
-        backbuffer.pitch  = bufferPitch;
+        appMemory.renderCommandStorage.used = 0;
+        RenderCommandBuffer renderCmds = {};
+        renderCmds.storage = &appMemory.renderCommandStorage;
+        renderCmds.width   = renderWidth;
+        renderCmds.height  = renderHeight;
 
-        app.Update(logFn, appMemory, backbuffer, userInput);
+        app.Update(logFn, appMemory, userInput, &renderCmds);
 
         // Carry over the input state for the next frame
         oldUserInput = userInput;
 
         // ---- Render -----------------------------------------------------
-        Render(renderer, texture, backbuffer);
+        FlushRenderCommands(&renderCmds, appPixels, renderWidth, renderHeight, bufferPitch);
+        Render(renderer, texture, appPixels, renderWidth, renderHeight, bufferPitch);
 
         // ---- Frame Timing -----------------------------------------------
         // Measure from currentCounter (this frame's start), not lastCounter (previous frame's start).
