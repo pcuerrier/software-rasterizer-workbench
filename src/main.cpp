@@ -12,6 +12,9 @@ int main(int argc, char* argv[])
     constexpr float TARGET_FRAME_TIME = 1.0f / (float)TARGET_FPS;
     const float SLEEP_THRESHOLD_MS    = 2.0f;
 
+    constexpr int CONTROLLER_BUTTON_COUNT = sizeof(ControllerInput) /
+                                            sizeof(ControllerButtonState);
+
     PlatformLogFn logFn = Logger_Init("crash_log.txt", /*truncate=*/true);
     // ---- SDL Init -------------------------------------------------------
     if (!SDL_Init(SDL_INIT_VIDEO))
@@ -85,9 +88,7 @@ int main(int argc, char* argv[])
 
         UserInput userInput    = {};
         // Carry over held button states from last frame
-        constexpr int kButtonCount = sizeof(userInput.controllers[0].buttons) /
-                                     sizeof(userInput.controllers[0].buttons[0]);
-        for (int i = 0; i < kButtonCount; ++i)
+        for (int i = 0; i < CONTROLLER_BUTTON_COUNT; ++i)
         {
             userInput.controllers[0].buttons[i].endedDown =
                 oldUserInput.controllers[0].buttons[i].endedDown;
