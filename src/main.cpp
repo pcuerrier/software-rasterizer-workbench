@@ -19,11 +19,30 @@ int main(int argc, char* argv[])
         return -1;
     }
 
+    // ---- Memory ---------------------------------------------------------
+    size_t permanentStorageSize = Megabytes(64);
+    size_t transientStorageSize = Gigabytes(1);
+    void*  appMemoryBlock      = SDL_calloc(1, permanentStorageSize + transientStorageSize);
+    if (!appMemoryBlock)
+    {
+        PLATFORM_LOG_CRITICAL("Failed to allocate application memory!");
+        return -1;
+    }
+
+    AppMemory appMemory = {};
+    InitializeArena(&appMemory.permanentStorage, appMemoryBlock, permanentStorageSize);
+    InitializeArena(&appMemory.transientStorage,
+                    (uint8_t*)appMemoryBlock + permanentStorageSize,
+                    transientStorageSize);
+
     // ---- Game Code (Hot-Reload) -----------------------------------------
     const char* sourceDLL = "app.dll";
     const char* tempDLL   = "app_temp.dll";
     AppCode     app       = LoadAppCode(sourceDLL, tempDLL);
-    app.Init(logFn);
+
+    // Initialize application state before assets so hub structures sit at the
+    // base of permanentStorage (assets are pushed on top of them).
+    app.Init(logFn, appMemory);
 
     // ---- Window & Renderer ----------------------------------------------
     SDL_Window* window = SDL_CreateWindow("JRPG - Workbench", 1280, 720, SDL_WINDOW_RESIZABLE);
@@ -92,16 +111,16 @@ int main(int argc, char* argv[])
         }
 #endif
         // ---- Game Update ------------------------------------------------
-        AppOffscreenBuffer buffer = {};
-        buffer.memory = appPixels;
-        buffer.width  = renderWidth;
-        buffer.height = renderHeight;
-        buffer.pitch  = bufferPitch;
+        AppOffscreenBuffer backbuffer = {};
+        backbuffer.memory = appPixels;
+        backbuffer.width  = renderWidth;
+        backbuffer.height = renderHeight;
+        backbuffer.pitch  = bufferPitch;
 
-        app.Update(logFn, &buffer);
+        app.Update(logFn, appMemory, backbuffer);
 
         // ---- Render -----------------------------------------------------
-        Render(renderer, texture, buffer);
+        Render(renderer, texture, backbuffer);
 
         // ---- Frame Timing -----------------------------------------------
         // Measure from currentCounter (this frame's start), not lastCounter (previous frame's start).

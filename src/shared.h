@@ -10,6 +10,7 @@
 #pragma warning(disable : 5045) // Compiler will insert Spectre mitigation for memory load if /Qspectre switch specified
 
 #include "debug.h"
+#include "arena.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -21,6 +22,14 @@ struct AppOffscreenBuffer
     int32_t width;
     int32_t height;
     int32_t pitch; // bytes per row
+};
+
+// The memory block passed to the application every frame
+struct AppMemory
+{
+    MemoryArena permanentStorage; // Survives hot-reloads (Player stats, world data)
+    MemoryArena transientStorage; // Cleared every frame (Frame-specific calculations)
+    bool isInitialized;
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -76,10 +85,10 @@ typedef void (*PlatformLogFn)(int level, const char* file, int line, const char*
 // ---------------------------------------------------------------------------------------------------------------------
 
 // Function pointer signature for the one-time game initialization (called before the main loop)
-#define APP_INIT(name) void name(PlatformLogFn logFn)
+#define APP_INIT(name) void name(PlatformLogFn logFn, AppMemory& memory)
 typedef APP_INIT(AppInitFn);
 
 // Function pointer signature for the main game loop
 #define APP_UPDATE(name) \
-    void name(PlatformLogFn logFn, AppOffscreenBuffer* buffer)
+    void name(PlatformLogFn logFn, AppMemory& memory, AppOffscreenBuffer& backbuffer)
 typedef APP_UPDATE(AppUpdateFn);
