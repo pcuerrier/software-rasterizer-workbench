@@ -102,22 +102,7 @@ int main(int argc, char* argv[])
         app.Update(&buffer);
 
         // ---- Render -----------------------------------------------------
-        void* texPixels = nullptr;
-        int   texPitch  = 0;
-        if (SDL_LockTexture(texture, NULL, &texPixels, &texPitch))
-        {
-            uint8_t* src = (uint8_t*)appPixels;
-            uint8_t* dst = (uint8_t*)texPixels;
-            for (int y = 0; y < renderHeight; ++y)
-            {
-                SDL_memcpy(dst, src, (size_t)(renderWidth * 4));
-                src += bufferPitch;
-                dst += texPitch;
-            }
-            SDL_UnlockTexture(texture);
-        }
-        SDL_RenderTexture(renderer, texture, NULL, NULL);
-        SDL_RenderPresent(renderer);
+        Render(renderer, texture, buffer);
 
         // ---- Frame Timing -----------------------------------------------
         // Measure from currentCounter (this frame's start), not lastCounter (previous frame's start).

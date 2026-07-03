@@ -1,5 +1,7 @@
 #pragma once
 
+#include "shared.h"
+
 #pragma warning(push, 0)
 #include <SDL3/SDL.h>
 #pragma warning(pop)
@@ -20,4 +22,10 @@ void ResizeRenderBuffer(
     int*           outWidth,
     int*           outHeight,
     int*           outPitch
+);
+
+void Render(
+    SDL_Renderer*             renderer,
+    SDL_Texture*              texture,
+    const AppOffscreenBuffer& buffer
 );
