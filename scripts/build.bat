@@ -4,7 +4,8 @@ REM Bootstrap x64 MSVC environment if not already configured.
 REM VSCMD_ARG_TGT_ARCH is only set (to "x64") after vcvarsall.bat x64 runs.
 REM Update this path if your VS installation is in a different location.
 if not "%VSCMD_ARG_TGT_ARCH%"=="x64" (
-    call "D:\Microsoft\VisualStudio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
+    REM call "D:\Microsoft\VisualStudio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
+    call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
 )
 
 if /i "%~1"=="Release" (
