@@ -321,6 +321,30 @@ Rationale and rejected alternatives for every settled decision. Format: **Decisi
 **DR-30: Level curves and stat growth as data tables, not formulas.**
 *Why:* tables are directly tunable per level and how the classics were balanced; formulas get bent into tables anyway once tuning starts.
 
+### Platform seam
+
+**DR-31: The app↔platform seam is absolute — the app makes zero OS calls; everything crosses as data buffers.**
+*Considered:* pragmatic direct calls from the app for "obviously platform-y" things — a blocking `fread` for saves, a direct audio API, querying the clock or OS entropy.
+*Why:* a deliberate experiment — push the platform/app separation as hard as it will go and see whether the payoffs hold. The app becomes a **pure state machine**: its only inputs are its own arenas, the frame's `UserInput`, a delivered time delta + RNG seed, and results delivered back from the platform; its only outputs are command buffers. Several payoffs are load-bearing, not aesthetic:
+1. **Hot-reload safety** — no OS handle (file, audio voice, socket) ever lives inside app memory, so reloading `app.dll` can never orphan or corrupt one; app memory stays pure serializable data across reloads.
+2. **Input record/replay determinism** — logging the frame's inputs + delivered results is enough to deterministically reproduce any bug (Handmade-Hero-style), essentially free once the seam is this hard.
+3. **Headless testability** — the app can be driven and its emitted command buffers asserted on, with no OS present.
+4. **Backend-swap / portability** — the same reason the render-command seam (DR-07) exists, applied to every OS interaction.
+
+*Mechanism:* the seam has exactly two directions — **forward = commands/requests** (app→platform), **reverse = events/results** (platform→app) — which unifies audio completion events (DR-27) and I/O results into one concept. I/O generalizes the render-command pattern into **request/result**, because I/O has latency and a return value (unlike fire-and-forget draw commands): the app emits e.g. `SAVE_WRITE {slot, src region}` / `SAVE_READ {request_id, slot, dest region}` and receives `IO_COMPLETE {request_id, status}` on the reverse buffer a later frame. The app owns the memory — it provides the destination region from its own arenas (saves have a bounded max size) and the platform only fills it. **Assets** (images, audio, maps, tables) stay behind **symbolic IDs**, never raw bytes to the app — residency is the platform's business; **saves** are the one case the app needs raw bytes in both directions, because it owns the serialization.
+
+*Deferred (rolling-wave):* the concrete I/O command/result structs are designed at **M7** (save/load), not now — no consumer exists earlier and building it now would be speculative. The binding constraint until then: **no direct OS call may leak into the app, even a temporary one.** First test is M1's hand-authored map — embed it as a compiled-in array or have the platform hand it in; do not `fopen` it inside the app.
+
+*Known purity holes to revisit:* (a) debug logging currently crosses via a synchronous `PlatformLogFn` callback — a small hole; could become a log-command buffer for full purity, tolerated for now. (b) Time and randomness must be *delivered as inputs* (frame `dt`, a platform-provided seed) rather than queried, which also strengthens replay determinism.
+
+### Testing
+
+**DR-32: Test the contract at three seam-defined surfaces; "include the source" linkage; no static test lib until forced.**
+*Considered:* (a) test everything, including platform/SDL glue and trivial plumbing — busywork that tests the framework, not the game; (b) skip tests until bugs force them — loses the safety net exactly on the deep systems we rewrite most; (c) build a static library of game code linked into both the DLLs and the test exe from the start.
+*Why:* the hard app/platform seam (DR-31) splits the code into three surfaces that each want a different technique — **pure cores** (unit tests), **the app as a pure function** (drive `AppUpdate`, assert on emitted command buffers + `AppMemory`, fully headless), and **the software rasterizer** (golden framebuffer tests — deterministic pixels). Platform/SDL glue is deliberately *not* unit-tested (verified by running). Tests assert on **outputs (the contract), not implementation**, so a deep system can be rewritten — e.g. a SIMD blit pass — and the same golden test proves byte-identical output; this is what makes the tinkering safe rather than risky. Which system gets tests is a workflow decision, not per-file guilt: **a deep system's acceptance bar for a milestone includes its tests; good-enough glue gets a test only when a real bug appears.**
+*Linkage — "include the source":* test TUs `#include` the unit under test directly (header-only like `arena.h`, or a single `.cpp`), compiling it into `run_tests.exe`. Rejected the static lib for now because (i) it is build-system work before the module boundaries have stabilized, and (ii) the game compiles no-exceptions + static CRT (`-EHsc- -MTd`) while GoogleTest needs exceptions + dynamic CRT (`-EHsc -MDd`), so a shared lib invites CRT-model link errors. The one discipline it demands — **one test TU per `.cpp`**, or the linker sees duplicate definitions — is free at this scale, and header-only units are immune. Migrate to a static lib only when genuinely forced (many test files fighting the include-once rule, or a need to test the exact shipping compilation), by which point the boundaries will be obvious. Rolling-wave applied to the test build itself.
+*Mechanics:* GoogleTest, wired via `build_tests.bat` (auto-globs `tests/*.cpp`; `gtest_main` supplies `main()`); `build.bat` builds and runs the suite as its last step. Debug-only `ASSERT` guards — which compile to nothing in release — are covered by `#if DEBUG` death tests (`EXPECT_DEATH`). First suite: `tests/test_arena.cpp` (8 arena invariants + 1 death test), the pattern-setter for pure-core tests.
+
 ---
 
 ## 13. Standing Rules
@@ -330,3 +354,4 @@ Rationale and rejected alternatives for every settled decision. Format: **Decisi
 3. Everything that persists lives in flat, serializable shared state.
 4. One pop per frame; input to the top mode only; single script VM.
 5. Names in source, indices at runtime, names in saves.
+6. **The app makes zero OS calls.** All outside data enters as inputs or delivered results; all outside effects leave as command/request buffers. The platform owns every OS resource. (DR-31.)
