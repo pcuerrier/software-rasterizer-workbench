@@ -8,9 +8,14 @@
 int main(int argc, char* argv[])
 {
     // ---- Constants ------------------------------------------------------
-    const int TARGET_FPS              = 60;
+    constexpr int TARGET_FPS              = 60;
     constexpr float TARGET_FRAME_TIME = 1.0f / (float)TARGET_FPS;
-    const float SLEEP_THRESHOLD_MS    = 2.0f;
+    constexpr float SLEEP_THRESHOLD_MS    = 2.0f;
+
+    constexpr int WINDOW_WIDTH  = 1280;
+    constexpr int WINDOW_HEIGHT = 720;
+    constexpr int RENDER_WIDTH  = 384;
+    constexpr int RENDER_HEIGHT = 216;
 
     constexpr int CONTROLLER_BUTTON_COUNT = sizeof(ControllerInput) /
                                             sizeof(ControllerButtonState);
@@ -53,7 +58,7 @@ int main(int argc, char* argv[])
     app.Init(logFn, appMemory);
 
     // ---- Window & Renderer ----------------------------------------------
-    SDL_Window* window = SDL_CreateWindow("JRPG - Workbench", 1280, 720, SDL_WINDOW_RESIZABLE);
+    SDL_Window* window = SDL_CreateWindow("JRPG - Workbench", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_RESIZABLE);
     if (!window)
     {
         PLATFORM_LOG_CRITICAL("Failed to create window: %s", SDL_GetError());
@@ -72,7 +77,7 @@ int main(int argc, char* argv[])
     int           bufferPitch  = 0;
     void*         appPixels   = nullptr;
     SDL_Texture*  texture      = nullptr;
-    ResizeRenderBuffer(renderer, 320, 180,
+    ResizeRenderBuffer(renderer, RENDER_WIDTH, RENDER_HEIGHT,
                        &texture, &appPixels,
                        &renderWidth, &renderHeight, &bufferPitch);
 
