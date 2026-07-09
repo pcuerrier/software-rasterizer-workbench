@@ -65,6 +65,13 @@ via `vcvarsall.bat` (hardcoded VS path in `scripts\shared_vars.bat` — update i
 
 ## How we work together
 
+**Roles: the user writes the code; Claude guides and project-manages.** Do **not** make
+changes to `src/**` or the build scripts unless the user explicitly asks. When implementation
+is needed, guide step-by-step instead — which file, what to add, the reasoning, the gotchas —
+and let the user write it. **Exception:** test files (`tests/**`), which Claude may write.
+Claude continues to own the planning/design layer: `project-plan.md`, `CLAUDE.md`, and memory.
+The point is that the user is here to learn the low-level systems by building them.
+
 **Rolling-wave planning.** Only the **current** milestone is defined to build-depth; the
 **next** milestone is lightly defined (just enough that the current one can't box it in);
 everything further out stays as the sketch in `project-plan.md`. Do not design ahead of

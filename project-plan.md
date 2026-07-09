@@ -138,7 +138,7 @@ Three layers:
 
 | Decision | Options | Decide by |
 |---|---|---|
-| Internal resolution | 320×180 vs. 256×224 vs. other | M1 (bakes into UI/map design) |
+| Internal resolution | **384×216** (16:9) — was 320×180 vs. 256×224 vs. other | ✔ Decided — DR-33 |
 | Enemy targeting scope | solo vs. **enemy groups** (likely) vs. full both-sides | Start of M6b |
 | Inventory model | per-character caps vs. shared pouch (less UI) | Start of M6a |
 | Map tooling | **Tiled** (default) vs. own editor | M5 |
@@ -157,6 +157,7 @@ Platform layer: SDL3 window, input, fixed timestep, framebuffer + upscale blit. 
 ### M1 — World on screen (2–3 wks)
 Tilemap blit with sub-tile camera offset, tileset loading, tile-locked movement + collision from tile properties, camera follow/clamp. Hand-authored text-grid map (no Tiled yet).
 **Exit:** walking a character around a scrolling map.
+→ *Sharpened spec below (current milestone detail).*
 
 ### M2 — A place, not a map (2–3 wks)
 Second map + warps with fades, ground/over layers, NPC pool with wander, facing-based interaction. Bitmap font + message window widget (hardcoded text).
@@ -187,6 +188,57 @@ Save/load (versioned snapshot, name-based refs, church/menu save points). Audio 
 Status effects, remaining spell effect types, transitions/juice, then actual game content. OpenGL swap and tier-1 smooth-scroll experiment slot in when the itch strikes.
 
 **Total engineering before M8: ~5–7 months at cadence.**
+
+---
+
+## Current milestone detail (rolling-wave) — M1: World on screen
+
+**Status:** current milestone. *Locked decisions:* internal res 384×216 (DR-33); fixed 60Hz tick, no `dt` (DR-34); player rendered as `fill_rect` (real sprite → M2); single tile layer (ground+over → M2); placeholder tileset authored as **char-art + palette**; map compiled-in (no file I/O).
+
+**Exit criterion:** walk a character around a scrolling map — tile-locked movement, collision from tile properties, camera follow + clamp.
+
+### Systems touched
+
+| System | Class | M1 role |
+|---|---|---|
+| Rasterizer | **Deep** (M1's core) | `fill_rect` → opaque tile blit via `draw_tilemap_layer` |
+| Field (move / collide / camera) | Good-enough game logic | Correct, not gold-plated |
+| Platform | Minimal | Render buffer 320×180 → 384×216 |
+
+### Rasterizer — acceptance bar
+- `draw_tilemap_layer` command drives an **opaque 16×16 tile blit** into the 384×216 buffer, with **edge clipping** and **sub-tile camera offset** (first tile `cam/16`, drawn at `-(cam%16)`, one extra row + column).
+- **Golden framebuffer test:** fractional camera near a map corner → exact pixels (clip + offset pinned).
+- *Deferred (scheduled, not cut):* colorkey/transparent sprite blit → M2; PNG via stb_image + cross-seam asset handoff → M5/M7; ground+over second layer → M2; SIMD tile blit → later; tileset-by-handle instead of pointer → when `renderer.dll` splits out.
+
+### Field logic (in the app)
+- **Movement:** `{tileX, tileY, facing, moveProgress}`; `moveProgress` advances a fixed amount per tick (DR-34); a move commits `tileX/tileY` when it completes.
+- **Collision:** refuse entry into a `blocked` tile — turn to face, don't move (DQ feel).
+- **Camera:** float pixel position, follows the player's interpolated pixel position, clamps to map bounds (center-small-interior → later).
+- Tested via the **app-as-pure-function** surface (drive `AppUpdate`, assert `AppMemory` + emitted commands).
+
+### Placeholder assets (compiled-in, no file I/O — DR-31)
+- **Tileset — char-art + palette:** each tile is 16 rows × 16 chars in the source; a palette maps char → ARGB; `AppInit` decodes the char-art into a `Tileset` atlas (N tiles across). Tiles carry intra-tile detail so scrolling reads visibly. (Replaced by real PNG loading at M5.)
+- **Map:** a compiled-in char grid (DR-20 text-grid, pre-Tiled). Iteration is free via `app.dll` hot-reload — edit the grid, rebuild the app, the map reloads live. External map files + Tiled → M5.
+
+### New data structures (app permanent storage, built in `AppInit`)
+```
+Tileset  { int w, h, tileSize; uint32_t* pixels; }        // atlas, N tiles across
+TileType { bool blocked; int atlasIndex; }                // per tile-type
+Tilemap  { int w, h; uint8_t* tiles; }                    // indices into TileType[]
+Entity   { int tileX, tileY, facing; float moveProgress; }// the player
+Camera   { float x, y; }                                  // pixel coords, float (DR-09)
+```
+
+### New `shared.h` render command
+`RENDER_CMD_TILEMAP_LAYER` + `RenderCmdTilemapLayer { type; uint32_t* tilesetPixels; int tilesetW, tilesetH, tileSize; uint8_t* tiles; int mapW, mapH; float camX, camY; }` + a `PushRenderCmdTilemapLayer(...)` helper. Pointer-in-command is fine while the renderer is in-process (`renderer.cpp` is `#include`d into the platform exe); it becomes a handle at the `renderer.dll` split — deferred.
+
+### Implementation order (user writes `src/**`; Claude writes `tests/**`)
+1. **Platform:** `main.cpp` `ResizeRenderBuffer(... 320, 180 ...)` → `384, 216`. *(Verify: window runs, rect still draws.)*
+2. **`shared.h`:** add the tilemap-layer command enum, struct, and push helper.
+3. **Renderer:** `FlushRenderCommands` gains a `RENDER_CMD_TILEMAP_LAYER` case — the clipped, camera-offset tile blit. *(The deep work.)* → **Claude writes the golden framebuffer test.**
+4. **App:** define the M1 structs; in `AppInit` decode the char-art tileset + build the compiled-in map.
+5. **App:** `AppUpdate` — tile-to-tile movement + collision + camera follow/clamp; push a `draw_tilemap_layer` then a `fill_rect` for the player. → **Claude writes the app-as-pure-function tests** (move into open tile; refuse blocked tile; camera clamps at edge).
+6. **Verify the exit:** walk the character around the scrolling map.
 
 ---
 
@@ -344,6 +396,16 @@ Rationale and rejected alternatives for every settled decision. Format: **Decisi
 *Why:* the hard app/platform seam (DR-31) splits the code into three surfaces that each want a different technique — **pure cores** (unit tests), **the app as a pure function** (drive `AppUpdate`, assert on emitted command buffers + `AppMemory`, fully headless), and **the software rasterizer** (golden framebuffer tests — deterministic pixels). Platform/SDL glue is deliberately *not* unit-tested (verified by running). Tests assert on **outputs (the contract), not implementation**, so a deep system can be rewritten — e.g. a SIMD blit pass — and the same golden test proves byte-identical output; this is what makes the tinkering safe rather than risky. Which system gets tests is a workflow decision, not per-file guilt: **a deep system's acceptance bar for a milestone includes its tests; good-enough glue gets a test only when a real bug appears.**
 *Linkage — "include the source":* test TUs `#include` the unit under test directly (header-only like `arena.h`, or a single `.cpp`), compiling it into `run_tests.exe`. Rejected the static lib for now because (i) it is build-system work before the module boundaries have stabilized, and (ii) the game compiles no-exceptions + static CRT (`-EHsc- -MTd`) while GoogleTest needs exceptions + dynamic CRT (`-EHsc -MDd`), so a shared lib invites CRT-model link errors. The one discipline it demands — **one test TU per `.cpp`**, or the linker sees duplicate definitions — is free at this scale, and header-only units are immune. Migrate to a static lib only when genuinely forced (many test files fighting the include-once rule, or a need to test the exact shipping compilation), by which point the boundaries will be obvious. Rolling-wave applied to the test build itself.
 *Mechanics:* GoogleTest, wired via `build_tests.bat` (auto-globs `tests/*.cpp`; `gtest_main` supplies `main()`); `build.bat` builds and runs the suite as its last step. Debug-only `ASSERT` guards — which compile to nothing in release — are covered by `#if DEBUG` death tests (`EXPECT_DEATH`). First suite: `tests/test_arena.cpp` (8 arena invariants + 1 death test), the pattern-setter for pure-core tests.
+
+### M1 decisions
+
+**DR-33: Internal resolution is 384×216.**
+*Considered:* 320×180 (16:9, exact ×6→1080p, already wired); 256×224 (authentic SNES 4:3, clean 16×14 tiles, but pillarboxes on widescreen and contradicts DR-11); 384×216 (chosen).
+*Why:* 16:9 keeps it consistent with DR-11 (fixed-height / variable-width widescreen), and 384×216 buys a wider field of view than 320×180 — 24×13.5 tiles vs. 20×11.25 at 16px — for more on-screen world. Fixed height 216 is the DR-11 base; width varies for wider aspects. Cost: 720p is a non-integer ×3.33 (handled by the fractional-scale/letterbox path); ×5→1080p and ×10→2160p are exact. Requires changing the hardcoded `320×180` in `main.cpp` to `384×216` (internal size is a startup value per DR-08, not a `#define`).
+
+**DR-34: Movement uses a fixed 60Hz logical tick; no `dt` crosses the app/platform seam.**
+*Considered:* fixed tick, no dt (chosen); platform-owned accumulator delivering an interpolation alpha now; passing wall-clock `dt` to the app.
+*Why:* matches the existing loop (it already pins each frame to 1/60s and calls `AppUpdate` once), and keeps `AppUpdate` a pure fixed tick so the app stays deterministic — the record/replay payoff of DR-31. Motion is expressed **per tick** (`move_progress += fixed amount`), never scaled by wall-clock `dt`, so decoupling sim from render later for high-refresh smoothness (DR-09) means *adding interpolation* (platform delivers an alpha, app double-buffers prev/current positions), not switching to a variable timestep. Rejected variable-`dt` (breaks determinism); rejected building the accumulator + interpolation now (machinery M1 doesn't need — deferred with DR-09). Accepted known property: with no catch-up, a frame that can't hit 60Hz slows the sim rather than dropping frames — fine at M1, revisited only if it ever matters.
 
 ---
 
