@@ -5,6 +5,8 @@
 #include "platform/platform_input.h"
 #include "platform/renderer.h"
 
+#include "rasterizer/rasterizer.h"
+
 int main(int argc, char* argv[])
 {
     // ---- Constants ------------------------------------------------------
@@ -261,3 +263,5 @@ int main(int argc, char* argv[])
 #include "platform/app_code.cpp"
 #include "platform/platform_input.cpp"
 #include "platform/renderer.cpp"
+
+#include "rasterizer/rasterizer.cpp"

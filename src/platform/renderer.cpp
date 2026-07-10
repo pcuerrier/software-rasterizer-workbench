@@ -1,62 +1,6 @@
 #include "renderer.h"
 
-static void DrawRectangle(void* memory, int w, int h, int pitch,
-                          float startX, float startY, int rectWidth, int rectHeight,
-                          uint32_t colorARGB)
-{
-    int minX = (int)startX;
-    int minY = (int)startY;
-    int maxX = minX + rectWidth;
-    int maxY = minY + rectHeight;
-
-    if (minX < 0) minX = 0;
-    if (minY < 0) minY = 0;
-    if (maxX > w) maxX = w;
-    if (maxY > h) maxY = h;
-
-    uint8_t* row = (uint8_t*)memory + (minX * 4) + (minY * pitch);
-    for (int y = minY; y < maxY; ++y)
-    {
-        uint32_t* pixel = (uint32_t*)row;
-        for (int x = minX; x < maxX; ++x)
-            *pixel++ = colorARGB;
-        row += pitch;
-    }
-}
-
-void FlushRenderCommands(RenderCommandBuffer* cmds, void* pixelBuffer, int w, int h, int pitch)
-{
-    uint8_t* at  = (uint8_t*)cmds->storage->base;
-    uint8_t* end = at + cmds->storage->used;
-
-    while (at < end)
-    {
-        RenderCommandType type = *(RenderCommandType*)at;
-        switch (type)
-        {
-        case RENDER_CMD_CLEAR:
-        {
-            RenderCmdClear* cmd = (RenderCmdClear*)at;
-            DrawRectangle(pixelBuffer, w, h, pitch, 0.0f, 0.0f, w, h, cmd->colorARGB);
-            at += sizeof(RenderCmdClear);
-            break;
-        }
-        case RENDER_CMD_RECT:
-        {
-            RenderCmdRect* cmd = (RenderCmdRect*)at;
-            DrawRectangle(pixelBuffer, w, h, pitch,
-                          (float)cmd->x, (float)cmd->y, cmd->w, cmd->h, cmd->colorARGB);
-            at += sizeof(RenderCmdRect);
-            break;
-        }
-        default:
-            at = end;
-            break;
-        }
-    }
-}
-
-void ResizeRenderBuffer(
+static void ResizeRenderBuffer(
     SDL_Renderer*  renderer,
     int            newWidth,
     int            newHeight,
@@ -94,7 +38,7 @@ void ResizeRenderBuffer(
     PLATFORM_LOG_INFO("Render buffer resized to %dx%d", newWidth, newHeight);
 }
 
-void Render(
+static void Render(
     SDL_Renderer* renderer,
     SDL_Texture*  texture,
     void*         pixelBuffer,

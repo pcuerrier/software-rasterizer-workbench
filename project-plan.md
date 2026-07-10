@@ -218,7 +218,7 @@ Status effects, remaining spell effect types, transitions/juice, then actual gam
 
 ### Placeholder assets (compiled-in, no file I/O — DR-31)
 - **Tileset — char-art + palette:** each tile is 16 rows × 16 chars in the source; a palette maps char → ARGB; `AppInit` decodes the char-art into a `Tileset` atlas (N tiles across). Tiles carry intra-tile detail so scrolling reads visibly. (Replaced by real PNG loading at M5.)
-- **Map:** a compiled-in char grid (DR-20 text-grid, pre-Tiled). Iteration is free via `app.dll` hot-reload — edit the grid, rebuild the app, the map reloads live. External map files + Tiled → M5.
+- **Map:** a compiled-in char grid (DR-20 text-grid, pre-Tiled). Hot-reload picks up `AppUpdate` **logic** changes live; changes to data built in `AppInit` (the map grid, the decoded tileset) currently need a **restart**, since `AppInit` runs once and isn't re-invoked on reload. Live data-iteration (reference DLL statics directly, or add a reload hook) is an optional nicety decided at step 4. External map files + Tiled → M5.
 
 ### New data structures (app permanent storage, built in `AppInit`)
 ```
@@ -231,6 +231,10 @@ Camera   { float x, y; }                                  // pixel coords, float
 
 ### New `shared.h` render command
 `RENDER_CMD_TILEMAP_LAYER` + `RenderCmdTilemapLayer { type; uint32_t* tilesetPixels; int tilesetW, tilesetH, tileSize; uint8_t* tiles; int mapW, mapH; float camX, camY; }` + a `PushRenderCmdTilemapLayer(...)` helper. Pointer-in-command is fine while the renderer is in-process (`renderer.cpp` is `#include`d into the platform exe); it becomes a handle at the `renderer.dll` split — deferred.
+
+- **Atlas is a single flat buffer (`tilesetPixels`)** = the whole decoded atlas, all N tile pictures; the renderer locates tile `k` via `tilesAcross = tilesetW/tileSize`, `topLeft = pixels + (k/tilesAcross)*tileSize*tilesetW + (k%tilesAcross)*tileSize`. **Consequence (known, accepted):** one atlas per tilemap-layer draw → art from multiple sources is *fused into one atlas at load time* (`AppInit` now, M5 baker later), invisible to the renderer. Different tilesets per visual layer = separate layer commands, each its own atlas (free — ground+over at M2). The limit that bites first is **`uint8_t tiles` ⇒ 256 tiles per atlas**; when exceeded, widen the per-cell index to `uint16_t`, don't add a second atlas.
+
+- **Render-command alignment contract (the whole `RenderCmd*` family).** `PushSize` aligns every allocation to 8 bytes, but `FlushRenderCommands` walks the stream with `at += sizeof(cmd)` and does **no** re-alignment. Writer and reader stay in lockstep only under two invariants: (1) **the render-command arena base is 8-aligned** — holds (`SDL_calloc` block, offset by 64 MB + 1 GB); and (2) **every `RenderCmd*` struct's `sizeof` is a multiple of 8** — so `PushSize` never inserts inter-command padding the reader can't see. A pointer-bearing command is self-safe (`alignof 8` ⇒ `sizeof` multiple of 8); the trap is a **pointer-free, all-4-byte command sized 4/12/20…**, which would silently desync every following command. **Guard it at compile time** (same pattern as the `ControllerInput` static_assert): `static_assert(sizeof(RenderCmdX) % 8 == 0, "…")` on each command struct — a build error beats a runtime stream desync. (If a command ever carries a 16-byte SIMD member, it must pass `PushSize(..., 16)` and the modulus rises to 16.)
 
 ### Implementation order (user writes `src/**`; Claude writes `tests/**`)
 1. **Platform:** `main.cpp` `ResizeRenderBuffer(... 320, 180 ...)` → `384, 216`. *(Verify: window runs, rect still draws.)*

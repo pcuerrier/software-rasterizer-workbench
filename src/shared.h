@@ -96,6 +96,7 @@ enum RenderCommandType : uint32_t
 {
     RENDER_CMD_CLEAR,
     RENDER_CMD_RECT,
+    RENDER_CMD_TILEMAP_LAYER,
 };
 
 struct RenderCmdClear
@@ -110,6 +111,34 @@ struct RenderCmdRect
     int32_t           x, y, w, h;
     uint32_t          colorARGB;
 };
+
+struct RenderCmdTilemapLayer
+{
+    RenderCommandType type;
+    uint32_t*         tilesetPixels;   // ARGB tile atlas texture; tilesAcross = tilesetWidth / tileSize
+    int32_t           tilesetWidth;    // Width of the tileset texture in pixels
+    int32_t           tilesetHeight;   // Height of the tileset texture in pixels
+    int32_t           tileSize;        // Width and height of each tile in pixels (tiles are square)
+    uint8_t*          tiles;
+    int32_t           mapWidth;        // Width of the tilemap in tiles
+    int32_t           mapHeight;       // Height of the tilemap in tiles
+    float             cameraX;         // Camera position in pixels (0,0 = top-left of tilemap)
+    float             cameraY;
+};
+
+// Guard: ensure all render command structs are 8-byte aligned for PushSize/FlushRenderCommands
+#define LIST_RENDER_COMMANDS \
+    X(RenderCmdClear)        \
+    X(RenderCmdRect)         \
+    X(RenderCmdTilemapLayer)
+
+#define X(render_command_struct) static_assert(sizeof(render_command_struct) % 8 == 0,                      \
+                                 #render_command_struct " is not 8-byte aligned "                           \
+                                 "Render command structs must be a multiple of 8: PushSize aligns each "    \
+                                 "allocation to 8, but FlushRenderCommands advances by raw sizeof, so any " \
+                                 "non-8 size would desync the command-stream walk.");
+LIST_RENDER_COMMANDS
+#undef X
 
 struct RenderCommandBuffer
 {
@@ -136,6 +165,24 @@ static inline void PushRenderCmdRect(RenderCommandBuffer* cmds,
     cmd->w         = w;
     cmd->h         = h;
     cmd->colorARGB = colorARGB;
+}
+
+static inline void PushRenderCmdTilemapLayer(RenderCommandBuffer* cmds,
+                                            uint32_t* tilesetPixels, int32_t tilesetWidth, int32_t tilesetHeight, int32_t tileSize,
+                                            uint8_t* tiles, int32_t mapWidth, int32_t mapHeight,
+                                            float cameraX, float cameraY)
+{
+    RenderCmdTilemapLayer* cmd = (RenderCmdTilemapLayer*)PushSize(cmds->storage, sizeof(RenderCmdTilemapLayer));
+    cmd->type           = RENDER_CMD_TILEMAP_LAYER;
+    cmd->tilesetPixels  = tilesetPixels;
+    cmd->tilesetWidth   = tilesetWidth;
+    cmd->tilesetHeight  = tilesetHeight;
+    cmd->tileSize       = tileSize;
+    cmd->tiles          = tiles;
+    cmd->mapWidth       = mapWidth;
+    cmd->mapHeight      = mapHeight;
+    cmd->cameraX        = cameraX;
+    cmd->cameraY        = cameraY;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

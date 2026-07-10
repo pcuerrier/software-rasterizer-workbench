@@ -12,9 +12,8 @@
 //  texture. Call ResizeRenderBuffer once at startup and again
 //  on every SDL_EVENT_WINDOW_RESIZED.
 // ============================================================
-void FlushRenderCommands(RenderCommandBuffer* cmds, void* pixelBuffer, int w, int h, int pitch);
 
-void ResizeRenderBuffer(
+static void ResizeRenderBuffer(
     SDL_Renderer*  renderer,
     int            newWidth,
     int            newHeight,
@@ -25,7 +24,7 @@ void ResizeRenderBuffer(
     int*           outPitch
 );
 
-void Render(
+static void Render(
     SDL_Renderer* renderer,
     SDL_Texture*  texture,
     void*         pixelBuffer,
