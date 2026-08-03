@@ -47,7 +47,7 @@ struct ControllerInput
 {
     union
     {
-        ControllerButtonState buttons[9];
+        ControllerButtonState buttons[11];
         struct
         {
             // Indices 0-3: directional movement (order must match buttons[])
@@ -61,13 +61,16 @@ struct ControllerInput
             ControllerButtonState attack;
             ControllerButtonState openInventory;
             ControllerButtonState openMenu;
+            // Debug
+            ControllerButtonState zoomIn;
+            ControllerButtonState zoomOut;
         };
     };
 };
 
 // Guard: named fields must cover exactly the same storage as buttons[].
 static_assert(
-    sizeof(ControllerInput) == 9 * sizeof(ControllerButtonState),
+    sizeof(ControllerInput) == 11 * sizeof(ControllerButtonState),
     "ControllerInput union size mismatch: buttons[] count does not match named fields"
 );
 
@@ -96,7 +99,7 @@ enum RenderCommandType : uint32_t
 {
     RENDER_CMD_CLEAR,
     RENDER_CMD_RECT,
-    RENDER_CMD_TILEMAP_LAYER,
+    RENDER_CMD_SET_CAMERA,
 };
 
 struct RenderCmdClear
@@ -112,25 +115,17 @@ struct RenderCmdRect
     uint32_t          colorARGB;
 };
 
-struct RenderCmdTilemapLayer
+struct RenderCmdSetCamera
 {
     RenderCommandType type;
-    uint32_t*         tilesetPixels;   // ARGB tile atlas texture; tilesAcross = tilesetWidth / tileSize
-    int32_t           tilesetWidth;    // Width of the tileset texture in pixels
-    int32_t           tilesetHeight;   // Height of the tileset texture in pixels
-    int32_t           tileSize;        // Width and height of each tile in pixels (tiles are square)
-    uint8_t*          tiles;
-    int32_t           mapWidth;        // Width of the tilemap in tiles
-    int32_t           mapHeight;       // Height of the tilemap in tiles
-    float             cameraX;         // Camera position in pixels (0,0 = top-left of tilemap)
-    float             cameraY;
+    float             x, y, zoom;
 };
 
 // Guard: ensure all render command structs are 8-byte aligned for PushSize/FlushRenderCommands
 #define LIST_RENDER_COMMANDS \
     X(RenderCmdClear)        \
     X(RenderCmdRect)         \
-    X(RenderCmdTilemapLayer)
+    X(RenderCmdSetCamera)
 
 #define X(render_command_struct) static_assert(sizeof(render_command_struct) % 8 == 0,                      \
                                  #render_command_struct " is not 8-byte aligned "                           \
@@ -167,22 +162,13 @@ static inline void PushRenderCmdRect(RenderCommandBuffer* cmds,
     cmd->colorARGB = colorARGB;
 }
 
-static inline void PushRenderCmdTilemapLayer(RenderCommandBuffer* cmds,
-                                            uint32_t* tilesetPixels, int32_t tilesetWidth, int32_t tilesetHeight, int32_t tileSize,
-                                            uint8_t* tiles, int32_t mapWidth, int32_t mapHeight,
-                                            float cameraX, float cameraY)
+static inline void PushRenderCmdSetCamera(RenderCommandBuffer* cmds, float x, float y, float zoom)
 {
-    RenderCmdTilemapLayer* cmd = (RenderCmdTilemapLayer*)PushSize(cmds->storage, sizeof(RenderCmdTilemapLayer));
-    cmd->type           = RENDER_CMD_TILEMAP_LAYER;
-    cmd->tilesetPixels  = tilesetPixels;
-    cmd->tilesetWidth   = tilesetWidth;
-    cmd->tilesetHeight  = tilesetHeight;
-    cmd->tileSize       = tileSize;
-    cmd->tiles          = tiles;
-    cmd->mapWidth       = mapWidth;
-    cmd->mapHeight      = mapHeight;
-    cmd->cameraX        = cameraX;
-    cmd->cameraY        = cameraY;
+    RenderCmdSetCamera* cmd = (RenderCmdSetCamera*)PushSize(cmds->storage, sizeof(RenderCmdSetCamera));
+    cmd->type = RENDER_CMD_SET_CAMERA;
+    cmd->x    = x;
+    cmd->y    = y;
+    cmd->zoom = zoom;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

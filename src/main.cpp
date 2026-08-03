@@ -149,6 +149,8 @@ int main(int argc, char* argv[])
                     else if (key == SDLK_Z || key == SDLK_X)     ProcessButtonMessage(&ctrl->attack,        isDown);
                     else if (key == SDLK_I)                      ProcessButtonMessage(&ctrl->openInventory, isDown);
                     else if (key == SDLK_TAB)                    ProcessButtonMessage(&ctrl->openMenu,      isDown);
+                    else if (key == SDLK_E)                      ProcessButtonMessage(&ctrl->zoomIn,        isDown);
+                    else if (key == SDLK_Q)                      ProcessButtonMessage(&ctrl->zoomOut,       isDown);
                 } break;
 
                 case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
@@ -246,6 +248,12 @@ int main(int argc, char* argv[])
 
         PLATFORM_LOG_TRACE("Frame Time: %.2f ms | FPS: %.2f", secondsElapsed * 1000.0f, 1.0f / secondsElapsed);
         lastCounter = currentCounter;
+
+        if (userInput.controllers[0].cancel.endedDown)
+        {
+            PLATFORM_LOG_INFO("Cancel button pressed. Exiting.");
+            running = false;
+        }
     }
 
     // TODO: None of this cleanup is actually necessary since the OS will reclaim all resources on process exit
