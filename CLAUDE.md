@@ -2,16 +2,19 @@
 
 ## What this project is
 
-A tactical turn-based roguelike in C-style C++ with SDL3 — but the **primary goal is
-learning and tinkering with low-level systems.** The custom software rasterizer, the
-hand-rolled arena memory, the bytecode VM, and the audio mixer are *deliverables in
-themselves*, not just means to ship a game. When advising, optimize for depth and
-craft in these systems, not time-to-fun. Cadence is ~1 hour/day, solo.
+*Left Stranded* — a real-time-with-pause tactical roguelike in C-style C++ with SDL3
+(Door Kickers 2 crossed with *Aliens*: a crew of 3–4 stranded on an alien world, fighting
+out through small maps against a swarm). But the **primary goal is learning and tinkering
+with low-level systems.** The custom software rasterizer, the hand-rolled arena memory,
+the bytecode VM, and the audio mixer are *deliverables in themselves*, not just means to
+ship a game. When advising, optimize for depth and craft in these systems, not
+time-to-fun. Cadence is ~1 hour/day, solo.
 
-The full living design doc is **`project-plan.md`** — architecture, milestones, and the
-Decision Records (DR-01 … DR-40). This file is the thin spine; that file is the detail.
-Don't duplicate it here. `old-jrpg-project-plan.md` is the retired pre-pivot plan, kept
-only as the historical record for carried-over DRs (see DR-35).
+The full living design doc is **`project-plan.md`** — architecture, milestones, the
+Decision Records (DR-01 … DR-48), and **§7, the open register of what is deliberately
+not designed yet**. This file is the thin spine; that file is the detail. Don't duplicate
+it here. `old-jrpg-project-plan.md` is the retired first-incarnation plan, kept only as
+the historical record for carried-over DRs (see DR-35, DR-41).
 
 ## Hard constraints
 
@@ -26,10 +29,10 @@ only as the historical record for carried-over DRs (see DR-35).
   pixels) → `renderer.dll` (planned; consumes commands, writes the framebuffer).
 - **`src/shared.h` is the only header crossing the DLL boundary.** Keep it free of
   platform-specific includes. (Older notes call this `platform.h` — the real file is
-  `shared.h`.) It pulls in `arena.h`, `debug.h` and `math.h` — the 3D math types are shared
-  because the app builds matrices and meshes while the renderer transforms them. The DLLs
-  never link spdlog; logging crosses the boundary via the `PlatformLogFn` function pointer
-  and the `LOG_*` macros.
+  `shared.h`.) It pulls in `arena.h` and `debug.h`, and will pull in `math2d.h` at M1 —
+  the 2D math types are shared because the app builds per-sprite transforms while the
+  renderer composes and inverts them. The DLLs never link spdlog; logging crosses the
+  boundary via the `PlatformLogFn` function pointer and the `LOG_*` macros.
 - **The app↔platform seam is absolute (the project's central experiment).** The `app.dll`
   makes **zero** OS calls — no audio, no file I/O, no clock query, no OS allocation.
   Everything the app needs from the outside arrives as *data* (frame `UserInput`, delivered
@@ -81,17 +84,19 @@ everything further out stays as the sketch in `project-plan.md`. Do not design a
 that horizon. Milestones sharpen just-in-time as we reach them.
 
 **Deep vs. good-enough systems.** Every system is one or the other:
-- *Deep* (tinker freely — this is why the project exists): the software **3D** rasterizer,
-  memory, the script VM, the audio mixer/threading.
-- *Good-enough* (exists only to make the deep systems reachable): menu/widget glue, the
-  dungeon mesh builder, generation plumbing, UI panels, data importers. Hold the line hard
-  here — resist gold-plating.
+- *Deep* (tinker freely — this is why the project exists): the software **2D** rasterizer,
+  memory, the script VM, the audio mixer/threading. (Swarm simulation is a candidate —
+  undecided until its milestone.)
+- *Good-enough* (exists only to make the deep systems reachable): the order/planning UI,
+  menu/widget glue, level generation plumbing, UI panels, data importers. Hold the line
+  hard here — resist gold-plating. Note the standing tension: the planning interface is
+  Door Kickers' *defining* feature and it lives on the good-enough side.
 
 **Acceptance state per deep system.** When a milestone touches a deep system, record its
 **acceptance bar for this milestone + what is explicitly deferred** (e.g. "M1 rasterizer:
-correct z-buffered flat-shaded triangle fill under ortho; deferred: top-left fill rule,
-texturing, near-plane clipping, perspective, SIMD"). Deferring is scheduling, not cutting
-a corner.
+clipped textured affine sprite blit with alpha and sub-pixel sampling; deferred: additive
+blend, visibility polygons, span optimization, SIMD"). Deferring is scheduling, not
+cutting a corner.
 
 **The exit criterion is the tiebreaker — against *fascination*, not impatience.** The
 real risk on this project is rabbit-holing forever, not losing motivation. When a system
@@ -142,5 +147,5 @@ description is the router, the way an interface is for a function call.
 hold everything; premature skills are premature abstraction. Create a skill for a seam
 only when (a) the seam is real and stable, and (b) its context is large enough that
 loading it every session is wasteful. Candidate future seams: **platform · renderer/
-rasterizer · engine (mode-stack + VM) · dungeon · tactics · data pipeline · audio.** Until
+rasterizer · engine (mode-stack + VM) · level · tactics · data pipeline · audio.** Until
 then, the milestone/cross-cutting knowledge stays here in the spine, not in any one skill.
